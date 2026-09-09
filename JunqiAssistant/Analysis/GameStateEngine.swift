@@ -58,9 +58,15 @@ final class GameStateEngine {
         }
 
         let currentTracks = Dictionary(uniqueKeysWithValues: board.tracks.map { ($0.id, $0) })
-        let currentByPosition = Dictionary(
-            uniqueKeysWithValues: board.tracks.map { ($0.current, $0) }
-        )
+        // 同一帧可能出现新旧轨迹短暂落在同一棋位，保留最后看到的轨迹，避免字典崩溃。
+        var currentByPosition: [BoardPoint: BoardTrack] = [:]
+        for track in board.tracks {
+            if let existing = currentByPosition[track.current],
+               existing.lastSeenFrame > track.lastSeenFrame {
+                continue
+            }
+            currentByPosition[track.current] = track
+        }
 
         bindTracks(currentTracks)
 

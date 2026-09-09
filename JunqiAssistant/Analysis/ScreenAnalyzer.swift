@@ -4,10 +4,13 @@ import CoreVideo
 
 final class ScreenAnalyzer {
     private let queue = DispatchQueue(label: "com.junqi.assistant.vision", qos: .userInitiated)
+    private let ocrQueue = DispatchQueue(label: "com.junqi.assistant.ocr", qos: .userInitiated)
     private let boardTracker = BoardTracker()
     private var lastStep: Int?
     private var lastOCRTime = Date.distantPast
     private var lastBoardDetectionTime = Date.distantPast
+    private var isOCRRunning = false
+    private var ocrGeneration = 0
     private var cachedBoardDetection: BoardDetection?
     private var cachedStep: Int?
     private var cachedPieces: [DetectedPiece] = []
@@ -21,6 +24,8 @@ final class ScreenAnalyzer {
             self.lastStep = nil
             self.lastOCRTime = .distantPast
             self.lastBoardDetectionTime = .distantPast
+            self.isOCRRunning = false
+            self.ocrGeneration += 1
             self.cachedBoardDetection = nil
             self.cachedStep = nil
             self.cachedPieces.removeAll()
@@ -50,27 +55,19 @@ final class ScreenAnalyzer {
             cachedBoardDetection = detection
             lastBoardDetectionTime = now
         }
-        let shouldRunOCR = now.timeIntervalSince(lastOCRTime) >= 1.0
-            || cachedRawText.isEmpty
-
-        if shouldRunOCR {
-            lastOCRTime = now
-            runOCR(pixelBuffer: pixelBuffer, boardRect: detection.rect)
-        }
-
-        if let step = cachedStep {
-            if step <= 1, lastStep != step {
-                boardTracker.reset()
-            }
-            lastStep = step
-        }
-
-        let rawText = lastOCRErrorText ?? cachedRawText
         let board = analyzeBoard(
             pixelBuffer: pixelBuffer,
             detection: detection,
             recognized: cachedRecognizedPieces
         )
+
+        scheduleOCRIfNeeded(
+            pixelBuffer: pixelBuffer,
+            boardRect: detection.rect,
+            now: now
+        )
+
+        let rawText = lastOCRErrorText ?? cachedRawText
         return ScreenSnapshot(
             step: cachedStep,
             rawText: rawText,
@@ -80,10 +77,46 @@ final class ScreenAnalyzer {
         )
     }
 
-    private func runOCR(
+    private struct OCRResult {
+        var step: Int?
+        var pieces: [DetectedPiece]
+        var rawText: String
+        var recognizedPieces: [RecognizedBoardPiece]
+        var errorText: String?
+    }
+
+    private func scheduleOCRIfNeeded(
+        pixelBuffer: CVPixelBuffer,
+        boardRect: CGRect,
+        now: Date
+    ) {
+        let isDue = now.timeIntervalSince(lastOCRTime) >= 1.0
+            || cachedRawText.isEmpty
+        guard isDue, !isOCRRunning else { return }
+
+        isOCRRunning = true
+        lastOCRTime = now
+        let generation = ocrGeneration
+        let buffer = pixelBuffer
+
+        ocrQueue.async { [weak self] in
+            guard let self else { return }
+            let result = self.performOCR(
+                pixelBuffer: buffer,
+                boardRect: boardRect
+            )
+            self.queue.async {
+                guard self.ocrGeneration == generation else { return }
+                self.applyOCRResult(result)
+                self.isOCRRunning = false
+            }
+        }
+    }
+
+    private func performOCR(
         pixelBuffer: CVPixelBuffer,
         boardRect: CGRect
-    ) {
+    ) -> OCRResult {
         // 全屏 OCR 只用于读取步数，不把微信界面或画中画文字混入棋子结果。
         let stepRequest = VNRecognizeTextRequest()
         stepRequest.recognitionLevel = .fast
@@ -106,8 +139,13 @@ final class ScreenAnalyzer {
         do {
             try handler.perform([stepRequest, boardRequest])
         } catch {
-            lastOCRErrorText = "OCR失败：\(error.localizedDescription)"
-            return
+            return OCRResult(
+                step: nil,
+                pieces: [],
+                rawText: "OCR失败：\(error.localizedDescription)",
+                recognizedPieces: [],
+                errorText: "OCR失败：\(error.localizedDescription)"
+            )
         }
 
         let stepObservations = (stepRequest.results as? [VNRecognizedTextObservation]) ?? []
@@ -139,10 +177,7 @@ final class ScreenAnalyzer {
             }
         }
 
-        cachedStep = step
-        cachedPieces = pieces
-        cachedRawText = makeDisplayText(step: step, pieces: pieces)
-        cachedRecognizedPieces = pieces.compactMap { piece -> RecognizedBoardPiece? in
+        let recognizedPieces = pieces.compactMap { piece -> RecognizedBoardPiece? in
             guard let point = BoardTracker.boardPoint(
                 forRelativeX: piece.normalizedRect.midX,
                 y: piece.normalizedRect.midY
@@ -151,7 +186,28 @@ final class ScreenAnalyzer {
             }
             return RecognizedBoardPiece(kind: piece.kind, point: point)
         }
-        lastOCRErrorText = nil
+        return OCRResult(
+            step: step,
+            pieces: pieces,
+            rawText: makeDisplayText(step: step, pieces: pieces),
+            recognizedPieces: recognizedPieces,
+            errorText: nil
+        )
+    }
+
+    private func applyOCRResult(_ result: OCRResult) {
+        if let step = result.step {
+            if step <= 1, lastStep != step {
+                boardTracker.reset()
+            }
+            lastStep = step
+        }
+
+        cachedStep = result.step
+        cachedPieces = result.pieces
+        cachedRawText = result.rawText
+        cachedRecognizedPieces = result.recognizedPieces
+        lastOCRErrorText = result.errorText
     }
 
     private func analyzeBoard(

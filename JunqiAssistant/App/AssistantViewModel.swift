@@ -164,7 +164,7 @@ final class AssistantViewModel: ObservableObject {
             leftOpponent = update.leftOpponent
             rightOpponent = update.rightOpponent
             events.append(contentsOf: update.newEvents)
-            liveStateText = update.statusText
+            liveStateText = "\(update.statusText) · 占位\(board.occupiedCount) 轨迹\(board.tracks.count) 移动\(board.moves.count)"
             confirmedPieces = gameStateEngine.confirmedPieces()
             enemyBacks = Set(
                 board.tracks
@@ -277,8 +277,9 @@ final class AssistantViewModel: ObservableObject {
     private func summarize(board: BoardSnapshot?) -> String {
         guard let board else { return "暂无轨迹" }
         let source = board.usedFallbackRect ? "自动回退" : "视觉定位"
+        let tracking = "\(source) · 占位\(board.occupiedCount) 轨迹\(board.tracks.count)"
         if board.occupiedCount < 60 || board.occupiedCount > 150 {
-            return "\(source)：识别棋位\(board.occupiedCount)/289，正在校准"
+            return "\(tracking)：正在校准"
         }
         let sideSummary = BoardSide.allCases.compactMap { side -> String? in
             guard let count = board.sideCounts[side], count > 0 else { return nil }
@@ -287,7 +288,7 @@ final class AssistantViewModel: ObservableObject {
         .joined(separator: " ")
 
         guard !board.moves.isEmpty else {
-            return "\(source)：\(sideSummary)"
+            return "\(tracking) · \(sideSummary)"
         }
 
         return board.moves.prefix(4).map { move in
