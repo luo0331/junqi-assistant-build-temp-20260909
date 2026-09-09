@@ -1,7 +1,28 @@
-import SwiftUI
 import ReplayKit
+import SwiftUI
 
 struct ContentView: View {
+    var body: some View {
+        TabView {
+            LiveAssistantView()
+                .tabItem {
+                    Label("实时", systemImage: "dot.radiowaves.left.and.right")
+                }
+
+            BoardImportView()
+                .tabItem {
+                    Label("棋谱", systemImage: "square.grid.3x3")
+                }
+
+            FourPlayerBoardView()
+                .tabItem {
+                    Label("四方棋盘", systemImage: "rectangle.split.2x2")
+                }
+        }
+    }
+}
+
+private struct LiveAssistantView: View {
     @EnvironmentObject private var model: AssistantViewModel
 
     var body: some View {
@@ -9,16 +30,17 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     statusCard
-                    broadcastCard
                     pipCard
+                    broadcastCard
                     ocrCard
+                    trajectoryCard
                     inferenceCard
                     stepsCard
                 }
                 .padding(18)
             }
             .background(Color(red: 0.95, green: 0.96, blue: 0.98))
-            .navigationTitle("四国军棋助手")
+            .navigationTitle("实时辅助")
         }
         .navigationViewStyle(.stack)
     }
@@ -50,6 +72,10 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
                 .disabled(!model.isRunning)
             }
+
+            Text("测试构建 v36")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .cardStyle()
     }
@@ -92,6 +118,17 @@ struct ContentView: View {
                 .font(.headline)
             Text(model.inferenceText)
                 .font(.subheadline)
+                .lineSpacing(4)
+        }
+        .cardStyle()
+    }
+
+    private var trajectoryCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("棋子轨迹")
+                .font(.headline)
+            Text(model.trajectoryText)
+                .font(.subheadline.monospacedDigit())
                 .lineSpacing(4)
         }
         .cardStyle()

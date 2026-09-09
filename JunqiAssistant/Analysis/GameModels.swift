@@ -142,6 +142,7 @@ enum EnemySide: String, CaseIterable, Codable, Identifiable {
 struct OpponentState: Codable {
     var dead: [PieceKind: Int] = [:]
     var revealed: [PieceKind: Int] = [:]
+    var unknownDead: Int = 0
 
     func count(_ kind: PieceKind, in dictionary: [PieceKind: Int]) -> Int {
         dictionary[kind, default: 0]
@@ -159,6 +160,29 @@ struct OpponentState: Codable {
         max(0, kind.totalCount - deadCount(kind) - revealedCount(kind))
     }
 
+    var unknownTotal: Int {
+        PieceKind.allCases.reduce(0) { $0 + unknownCount($1) }
+    }
+
+    var remainingCount: Int {
+        max(0, unknownTotal - unknownDead)
+    }
+
+    func remainingCount(for kind: PieceKind) -> Int {
+        let knownAlive = max(0, kind.totalCount - deadCount(kind))
+        let unknownAlive = effectiveUnknownCount(kind)
+        return min(
+            knownAlive,
+            max(0, Int(unknownAlive.rounded()) + revealedCount(kind))
+        )
+    }
+
+    func effectiveUnknownCount(_ kind: PieceKind) -> Double {
+        let base = Double(unknownCount(kind))
+        guard unknownTotal > 0 else { return 0 }
+        return base * Double(remainingCount) / Double(unknownTotal)
+    }
+
     mutating func setDead(_ kind: PieceKind, count: Int) {
         dead[kind] = min(max(0, count), kind.totalCount)
     }
@@ -167,9 +191,19 @@ struct OpponentState: Codable {
         revealed[kind] = min(max(0, count), kind.totalCount)
     }
 
+    mutating func markDead(_ kind: PieceKind) {
+        setDead(kind, count: deadCount(kind) + 1)
+        setRevealed(kind, count: max(0, revealedCount(kind) - 1))
+    }
+
+    mutating func markUnknownDead() {
+        unknownDead += 1
+    }
+
     mutating func reset() {
         dead.removeAll()
         revealed.removeAll()
+        unknownDead = 0
     }
 }
 
@@ -220,25 +254,90 @@ struct DetectedPiece: Identifiable {
     var normalizedRect: CGRect
 }
 
+struct BoardPoint: Hashable, Codable, CustomStringConvertible {
+    var row: Int
+    var col: Int
+
+    var description: String {
+        "\(row + 1),\(col + 1)"
+    }
+}
+
+enum BoardSide: String, CaseIterable, Codable {
+    case ours
+    case teammate
+    case leftEnemy
+    case rightEnemy
+    case center
+
+    var title: String {
+        switch self {
+        case .ours: return "我方"
+        case .teammate: return "队友"
+        case .leftEnemy: return "左敌"
+        case .rightEnemy: return "右敌"
+        case .center: return "中央"
+        }
+    }
+}
+
+struct BoardMove: Identifiable {
+    var id = UUID()
+    var trackID: String
+    var from: BoardPoint
+    var to: BoardPoint
+    var side: BoardSide
+    var kind: PieceKind?
+}
+
+struct BoardTrack: Identifiable {
+    var id: String
+    var current: BoardPoint
+    var history: [BoardPoint]
+    var side: BoardSide
+    var kind: PieceKind?
+    var lastSeenFrame: Int
+}
+
+struct BoardSnapshot {
+    var frameIndex: Int
+    var boardRect: CGRect
+    var isReliable: Bool
+    var occupiedCount: Int
+    var recognizedCount: Int
+    var usedFallbackRect: Bool
+    var scoreMinimum: Double
+    var scoreMaximum: Double
+    var occupancyThreshold: Double
+    var sideCounts: [BoardSide: Int]
+    var tracks: [BoardTrack]
+    var moves: [BoardMove]
+}
+
 struct ScreenSnapshot {
     var step: Int?
     var rawText: String
     var pieces: [DetectedPiece]
+    var board: BoardSnapshot?
     var capturedAt: Date
 }
 
 struct OverlayState {
     var statusText: String
     var step: Int?
+    var ocrPreview: String
     var leftSummary: String
     var rightSummary: String
+    var eventText: String
     var candidates: [String]
 
     static let idle = OverlayState(
         statusText: "等待录屏画面",
         step: nil,
+        ocrPreview: "等待 OCR 画面",
         leftSummary: "左侧：未识别",
         rightSummary: "右侧：未识别",
+        eventText: "等待棋局事件",
         candidates: ["启动录屏后自动分析"]
     )
 }

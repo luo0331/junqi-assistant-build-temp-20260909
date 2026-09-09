@@ -1,94 +1,120 @@
 import UIKit
 
 enum OverlayRenderer {
-    static func render(_ state: OverlayState, size: CGSize = CGSize(width: 640, height: 360)) -> UIImage {
+    static func render(
+        _ state: OverlayState,
+        size: CGSize = CGSize(width: 640, height: 360)
+    ) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { context in
             let bounds = CGRect(origin: .zero, size: size)
-            UIColor(red: 0.06, green: 0.09, blue: 0.14, alpha: 1).setFill()
+            UIColor(red: 0.97, green: 0.98, blue: 1.0, alpha: 1).setFill()
             context.fill(bounds)
 
-            let accent = UIColor(red: 0.94, green: 0.70, blue: 0.22, alpha: 1)
+            let headerColor = UIColor(red: 0.08, green: 0.20, blue: 0.36, alpha: 1)
+            let accent = UIColor(red: 0.95, green: 0.62, blue: 0.12, alpha: 1)
+            headerColor.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: size.width, height: 72))
             accent.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: size.width, height: 8))
+            context.fill(CGRect(x: 0, y: 68, width: size.width, height: 4))
 
             drawText(
-                "军棋实时情报",
-                in: CGRect(x: 28, y: 22, width: 300, height: 42),
-                font: .systemFont(ofSize: 30, weight: .bold),
+                "四国军棋实时情报",
+                in: CGRect(x: 24, y: 12, width: 360, height: 42),
+                font: .systemFont(ofSize: 31, weight: .bold),
                 color: .white
             )
 
             let stepText = state.step.map { "第\($0)步" } ?? "步数识别中"
             drawText(
                 stepText,
-                in: CGRect(x: size.width - 190, y: 28, width: 160, height: 32),
-                font: .monospacedDigitSystemFont(ofSize: 24, weight: .semibold),
+                in: CGRect(x: size.width - 180, y: 14, width: 150, height: 36),
+                font: .monospacedDigitSystemFont(ofSize: 27, weight: .bold),
                 color: accent,
                 alignment: .right
             )
 
             drawText(
                 state.statusText,
-                in: CGRect(x: 28, y: 74, width: size.width - 56, height: 30),
-                font: .systemFont(ofSize: 20, weight: .medium),
-                color: UIColor(white: 0.85, alpha: 1)
+                in: CGRect(x: 24, y: 43, width: size.width - 220, height: 24),
+                font: .systemFont(ofSize: 16, weight: .medium),
+                color: UIColor.white.withAlphaComponent(0.82)
             )
 
-            let panelTop: CGFloat = 116
-            let panelHeight: CGFloat = 94
-            let panelWidth = (size.width - 84) / 2
+            let panelTop: CGFloat = 82
+            let panelHeight: CGFloat = 108
+            let panelWidth = (size.width - 72) / 2
             drawPanel(
-                title: "左侧敌方",
+                title: "左敌剩余",
                 body: state.leftSummary,
-                rect: CGRect(x: 28, y: panelTop, width: panelWidth, height: panelHeight),
-                accent: UIColor(red: 0.33, green: 0.73, blue: 0.94, alpha: 1)
+                rect: CGRect(x: 24, y: panelTop, width: panelWidth, height: panelHeight),
+                accent: UIColor(red: 0.94, green: 0.30, blue: 0.24, alpha: 1)
             )
             drawPanel(
-                title: "右侧敌方",
+                title: "右敌剩余",
                 body: state.rightSummary,
-                rect: CGRect(x: 56 + panelWidth, y: panelTop, width: panelWidth, height: panelHeight),
-                accent: UIColor(red: 0.94, green: 0.42, blue: 0.36, alpha: 1)
+                rect: CGRect(x: 48 + panelWidth, y: panelTop, width: panelWidth, height: panelHeight),
+                accent: UIColor(red: 0.95, green: 0.52, blue: 0.12, alpha: 1)
             )
 
             drawText(
-                "候选推断",
-                in: CGRect(x: 28, y: 228, width: 180, height: 28),
-                font: .systemFont(ofSize: 20, weight: .bold),
+                "推演事件",
+                in: CGRect(x: 24, y: 198, width: 150, height: 28),
+                font: .systemFont(ofSize: 22, weight: .bold),
                 color: accent
             )
+            drawText(
+                state.eventText,
+                in: CGRect(x: 24, y: 226, width: size.width - 48, height: 46),
+                font: .systemFont(ofSize: 27, weight: .bold),
+                color: headerColor
+            )
 
+            drawText(
+                "候选",
+                in: CGRect(x: 24, y: 280, width: 100, height: 26),
+                font: .systemFont(ofSize: 21, weight: .bold),
+                color: accent
+            )
             let candidateText = state.candidates.isEmpty
-                ? "暂无足够情报"
-                : state.candidates.prefix(3).joined(separator: "   ")
+                ? "暂无候选情报"
+                : state.candidates.prefix(3).joined(separator: "  ")
             drawText(
                 candidateText,
-                in: CGRect(x: 28, y: 262, width: size.width - 56, height: 70),
-                font: .systemFont(ofSize: 21, weight: .medium),
-                color: .white
+                in: CGRect(x: 24, y: 306, width: size.width - 48, height: 42),
+                font: .monospacedDigitSystemFont(ofSize: 20, weight: .semibold),
+                color: UIColor(red: 0.12, green: 0.17, blue: 0.24, alpha: 1)
             )
         }
     }
 
-    private static func drawPanel(title: String, body: String, rect: CGRect, accent: UIColor) {
-        let path = UIBezierPath(roundedRect: rect, cornerRadius: 12)
-        UIColor(white: 1, alpha: 0.08).setFill()
+    private static func drawPanel(
+        title: String,
+        body: String,
+        rect: CGRect,
+        accent: UIColor
+    ) {
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: 11)
+        UIColor(white: 1, alpha: 0.95).setFill()
         path.fill()
 
         accent.setFill()
-        UIBezierPath(roundedRect: CGRect(x: rect.minX, y: rect.minY, width: 6, height: rect.height), cornerRadius: 3).fill()
+        UIBezierPath(
+            roundedRect: CGRect(x: rect.minX, y: rect.minY, width: 6, height: rect.height),
+            cornerRadius: 3
+        ).fill()
 
         drawText(
             title,
-            in: CGRect(x: rect.minX + 18, y: rect.minY + 12, width: rect.width - 30, height: 26),
-            font: .systemFont(ofSize: 18, weight: .semibold),
+            in: CGRect(x: rect.minX + 16, y: rect.minY + 7, width: rect.width - 26, height: 24),
+            font: .systemFont(ofSize: 18, weight: .bold),
             color: accent
         )
         drawText(
-            body,
-            in: CGRect(x: rect.minX + 18, y: rect.minY + 42, width: rect.width - 30, height: 44),
-            font: .systemFont(ofSize: 17, weight: .regular),
-            color: UIColor(white: 0.92, alpha: 1)
+            body.isEmpty ? "暂无数据" : body,
+            in: CGRect(x: rect.minX + 16, y: rect.minY + 31, width: rect.width - 26, height: 70),
+            font: .monospacedDigitSystemFont(ofSize: 18, weight: .bold),
+            color: UIColor(red: 0.10, green: 0.14, blue: 0.20, alpha: 1)
         )
     }
 

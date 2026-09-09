@@ -38,7 +38,8 @@ final class FrameSender {
             guard let self else { return }
 
             let now = Date()
-            guard now.timeIntervalSince(self.lastCaptureTime) >= 0.45 else { return }
+            // 快速交叉可能 1～2 秒发生多次，轨迹至少需要约 8～10fps。
+            guard now.timeIntervalSince(self.lastCaptureTime) >= 0.10 else { return }
             self.lastCaptureTime = now
 
             guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
@@ -120,9 +121,9 @@ final class FrameSender {
         let height = image.extent.height
         guard width > 0, height > 0 else { return nil }
 
-        let maxWidth: CGFloat = 1280
-        let maxHeight: CGFloat = 720
-        let scale = min(1, maxWidth / width, maxHeight / height)
+        // 竖屏棋盘必须按长边缩放，避免被 720 高度限制压成低分辨率。
+        let maxDimension: CGFloat = 1280
+        let scale = min(1, maxDimension / max(width, height))
         let output = scale < 1 ? image.transformed(by: CGAffineTransform(scaleX: scale, y: scale)) : image
         let colorSpace = CGColorSpaceCreateDeviceRGB()
 

@@ -26,11 +26,12 @@ final class InferenceEngine {
 
         return grouped.map { contactID, contactEvents in
             let candidates = PieceKind.allCases.compactMap { kind -> CandidateProbability? in
-                guard opponent.unknownCount(kind) > 0 else { return nil }
+                let weight = opponent.effectiveUnknownCount(kind)
+                guard weight > 0 else { return nil }
                 guard contactEvents.allSatisfy({ isPossible(kind, event: $0) }) else { return nil }
                 return CandidateProbability(
                     kind: kind,
-                    probability: Double(opponent.unknownCount(kind))
+                    probability: weight
                 )
             }
 

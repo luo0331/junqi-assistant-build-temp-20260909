@@ -1,65 +1,30 @@
-import UIKit
-import AVKit
 import AVFoundation
+import AVKit
 import Combine
-import CoreMedia
+import UIKit
 
-final class PiPPreviewView: UIView {
-    override class var layerClass: AnyClass { AVSampleBufferDisplayLayer.self }
-
-    var displayLayer: AVSampleBufferDisplayLayer {
-        layer as! AVSampleBufferDisplayLayer
-    }
-
-    private(set) var timebase: CMTimebase?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .black
-        displayLayer.videoGravity = .resizeAspect
-
-        // 时间基准用于让静态情报画面在画中画中持续可见。
-        var timebase: CMTimebase?
-        CMTimebaseCreateWithSourceClock(
-            allocator: kCFAllocatorDefault,
-            sourceClock: CMClockGetHostTimeClock(),
-            timebaseOut: &timebase
-        )
-        if let timebase {
-            self.timebase = timebase
-            displayLayer.controlTimebase = timebase
-            CMTimebaseSetTime(timebase, time: .zero)
-            CMTimebaseSetRate(timebase, rate: 1.0)
-        }
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-}
-
+@MainActor
 final class PiPController: NSObject, ObservableObject {
     @Published var isActive = false
     @Published var statusText = "画中画未启动"
 
-    let previewView = PiPPreviewView()
+    let previewView = PiPPlayerView()
 
+    private let player = AVPlayer()
     private var pictureInPictureController: AVPictureInPictureController?
     private var currentState: OverlayState = .idle
+    private var isPreparing = false
 
     override init() {
         super.init()
+
+        previewView.playerLayer.player = player
+        player.isMuted = true
+        player.actionAtItemEnd = .none
+        player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+
         configureAudioSession()
-
-        let contentSource = AVPictureInPictureController.ContentSource(
-            sampleBufferDisplayLayer: previewView.displayLayer,
-            playbackDelegate: self
-        )
-        pictureInPictureController = AVPictureInPictureController(contentSource: contentSource)
-        pictureInPictureController?.delegate = self
-        pictureInPictureController?.canStartPictureInPictureAutomaticallyFromInline = true
-
-        enqueue(state: currentState)
+        OverlayFrameStore.shared.update(currentState)
     }
 
     func start() {
@@ -68,67 +33,131 @@ final class PiPController: NSObject, ObservableObject {
             return
         }
 
-        enqueue(state: currentState)
-        pictureInPictureController?.startPictureInPicture()
+        OverlayFrameStore.shared.update(currentState)
+        if player.currentItem == nil {
+            preparePlayerAndStart()
+        } else {
+            startPictureInPicture()
+        }
     }
 
     func stop() {
         pictureInPictureController?.stopPictureInPicture()
+        player.pause()
     }
 
     func update(state: OverlayState) {
         currentState = state
-        enqueue(state: state)
+        OverlayFrameStore.shared.update(state)
+
+        if player.currentItem != nil, player.rate == 0 {
+            player.play()
+        }
     }
 
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .allowBluetoothA2DP])
+        try? session.setCategory(
+            .playback,
+            mode: .moviePlayback,
+            options: [.allowAirPlay, .allowBluetoothA2DP]
+        )
         try? session.setActive(true)
     }
 
-    private func enqueue(state: OverlayState) {
-        let image = OverlayRenderer.render(state)
-        guard let pixelBuffer = image.toCVPixelBuffer(width: 640, height: 360) else { return }
+    private func preparePlayerAndStart() {
+        guard !isPreparing else { return }
+        isPreparing = true
+        statusText = "正在准备画中画"
 
-        var formatDescription: CMVideoFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDescription
-        )
-        guard let formatDescription else { return }
+        Task { [weak self] in
+            guard let self else { return }
 
-        let presentationTime = previewView.timebase.map(CMTimebaseGetTime) ?? CMClockGetTime(CMClockGetHostTimeClock())
-        var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 1),
-            presentationTimeStamp: presentationTime,
-            decodeTimeStamp: .invalid
-        )
-        var sampleBuffer: CMSampleBuffer?
-        CMSampleBufferCreateReadyWithImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescription: formatDescription,
-            sampleTiming: &timing,
-            sampleBufferOut: &sampleBuffer
-        )
-        guard let sampleBuffer else { return }
+            do {
+                let item = try await OverlayVideoPipeline.makePlayerItem()
+                guard player.currentItem == nil else {
+                    isPreparing = false
+                    return
+                }
 
-        if previewView.displayLayer.status == .failed {
-            previewView.displayLayer.flush()
+                observePlaybackEnd(of: item)
+                player.replaceCurrentItem(with: item)
+                player.play()
+
+                try await waitUntilReady(item)
+                isPreparing = false
+                startPictureInPicture()
+            } catch {
+                isPreparing = false
+                statusText = "画中画准备失败：\(error.localizedDescription)"
+            }
         }
-        previewView.displayLayer.enqueue(sampleBuffer)
+    }
+
+    private func waitUntilReady(_ item: AVPlayerItem) async throws {
+        for _ in 0..<30 {
+            switch item.status {
+            case .readyToPlay:
+                return
+            case .failed:
+                throw item.error ?? OverlayVideoError.playerItemFailed
+            default:
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+        throw OverlayVideoError.playerItemTimedOut
+    }
+
+    private func observePlaybackEnd(of item: AVPlayerItem) {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .AVPlayerItemDidPlayToEndTime,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(playbackDidEnd(_:)),
+            name: .AVPlayerItemDidPlayToEndTime,
+            object: item
+        )
+    }
+
+    @objc
+    private func playbackDidEnd(_ notification: Notification) {
+        player.seek(to: .zero)
+        player.play()
+    }
+
+    private func startPictureInPicture() {
+        configurePictureInPictureControllerIfNeeded()
+        player.play()
+        pictureInPictureController?.startPictureInPicture()
+    }
+
+    private func configurePictureInPictureControllerIfNeeded() {
+        guard pictureInPictureController == nil else { return }
+
+        guard let controller = AVPictureInPictureController(playerLayer: previewView.playerLayer) else {
+            statusText = "无法创建画中画控制器"
+            return
+        }
+        controller.delegate = self
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        pictureInPictureController = controller
     }
 }
 
 extension PiPController: AVPictureInPictureControllerDelegate {
-    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    func pictureInPictureControllerDidStartPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
         isActive = true
         statusText = "画中画运行中"
     }
 
-    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    func pictureInPictureControllerDidStopPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
         isActive = false
         statusText = "画中画已停止"
     }
@@ -141,42 +170,3 @@ extension PiPController: AVPictureInPictureControllerDelegate {
         statusText = "画中画启动失败：\(error.localizedDescription)"
     }
 }
-
-extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        setPlaying playing: Bool
-    ) {
-        enqueue(state: currentState)
-    }
-
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        didTransitionToRenderSize newRenderSize: CMVideoDimensions
-    ) {
-    }
-
-    func pictureInPictureController(
-        _ pictureInPictureController: AVPictureInPictureController,
-        skipByInterval skipInterval: CMTime,
-        completion completionHandler: @escaping () -> Void
-    ) {
-        completionHandler()
-    }
-
-    func pictureInPictureControllerTimeRangeForPlayback(
-        _ pictureInPictureController: AVPictureInPictureController
-    ) -> CMTimeRange {
-        CMTimeRange(start: .zero, duration: .positiveInfinity)
-    }
-
-    func pictureInPictureControllerIsPlaybackPaused(
-        _ pictureInPictureController: AVPictureInPictureController
-    ) -> Bool {
-        false
-    }
-}
-
-
-
-
