@@ -13,6 +13,8 @@ jobs:
         run: brew install xcodegen
       - name: Generate Xcode project
         run: xcodegen generate
+      - name: Normalize Xcode project format
+        run: sed -i '' 's/objectVersion = 77;/objectVersion = 60;/g' JunqiAssistant.xcodeproj/project.pbxproj
       - name: Build unsigned app
         run: |
           xcodebuild \
@@ -35,6 +37,7 @@ jobs:
         with:
           name: JunqiAssistant-unsigned-ipa
           path: JunqiAssistant-unsigned.ipa
+
 
 
 
