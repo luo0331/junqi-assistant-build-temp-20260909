@@ -1,4 +1,5 @@
 import SwiftUI
+import ReplayKit
 
 struct ContentView: View {
     @EnvironmentObject private var model: AssistantViewModel
@@ -8,6 +9,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     statusCard
+                    broadcastCard
                     pipCard
                     ocrCard
                     inferenceCard
@@ -99,9 +101,22 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("使用顺序")
                 .font(.headline)
-            Text("1. 点击“启动辅助”，确认画中画出现。\n2. 切到微信小游戏。\n3. 从控制中心启动系统录屏并选择“军棋助手”。\n4. 保持录屏运行，画中画会自动更新。")
+            Text("1. 点击“启动辅助”，确认画中画出现。\n2. 点击“启动系统录屏”并选择“军棋录屏分析”。\n3. 切到微信小游戏。\n4. 保持录屏运行，画中画会自动更新。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+        .cardStyle()
+    }
+
+    private var broadcastCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("启动系统录屏")
+                .font(.headline)
+            Text("点击下方按钮，在系统列表中选择“军棋录屏分析”。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            BroadcastPickerRepresentable()
+                .frame(maxWidth: .infinity, minHeight: 52)
         }
         .cardStyle()
     }
@@ -115,6 +130,22 @@ private struct PiPPreviewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
+    }
+}
+
+private struct BroadcastPickerRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
+        let picker = RPSystemBroadcastPickerView(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 52)
+        )
+        picker.preferredExtension = "com.junqi.assistant.broadcast"
+        picker.showsMicrophoneButton = false
+        picker.backgroundColor = .clear
+        return picker
+    }
+
+    func updateUIView(_ uiView: RPSystemBroadcastPickerView, context: Context) {
+        uiView.preferredExtension = "com.junqi.assistant.broadcast"
     }
 }
 
