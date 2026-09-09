@@ -20,16 +20,16 @@ final class PiPPreviewView: UIView {
 
         // 时间基准用于让静态情报画面在画中画中持续可见。
         var timebase: CMTimebase?
-        CMTimebaseCreateWithMasterClock(
+        CMTimebaseCreateWithSourceClock(
             allocator: kCFAllocatorDefault,
-            masterClock: CMClockGetHostTimeClock(),
+            sourceClock: CMClockGetHostTimeClock(),
             timebaseOut: &timebase
         )
         if let timebase {
             self.timebase = timebase
             displayLayer.controlTimebase = timebase
-            CMTimebaseSetTime(timebase, .zero)
-            CMTimebaseSetRate(timebase, 1.0)
+            CMTimebaseSetTime(timebase, time: .zero)
+            CMTimebaseSetRate(timebase, rate: 1.0)
         }
     }
 
@@ -176,5 +176,7 @@ extension PiPController: AVPictureInPictureSampleBufferPlaybackDelegate {
         false
     }
 }
+
+
 
 

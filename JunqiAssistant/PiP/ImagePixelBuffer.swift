@@ -4,11 +4,11 @@ import CoreVideo
 extension Data {
     func toCVPixelBuffer(maxWidth: Int = 1280, maxHeight: Int = 720) -> CVPixelBuffer? {
         guard let image = UIImage(data: self) else { return nil }
-        let width = max(1, Int(image.size.width))
-        let height = max(1, Int(image.size.height))
+        let width = Swift.max(1, Int(image.size.width))
+        let height = Swift.max(1, Int(image.size.height))
         let scale = min(1, CGFloat(maxWidth) / CGFloat(width), CGFloat(maxHeight) / CGFloat(height))
-        let targetWidth = max(1, Int(CGFloat(width) * scale))
-        let targetHeight = max(1, Int(CGFloat(height) * scale))
+        let targetWidth = Swift.max(1, Int(CGFloat(width) * scale))
+        let targetHeight = Swift.max(1, Int(CGFloat(height) * scale))
         return image.toCVPixelBuffer(width: targetWidth, height: targetHeight)
     }
 }
@@ -55,5 +55,6 @@ extension UIImage {
         return buffer
     }
 }
+
 
 
