@@ -56,3 +56,37 @@ open JunqiAssistant.xcodeproj
 - GitHub Actions 未签名 IPA 构建
 
 还需要用真机继续校准棋盘坐标、棋子背面识别和吃子事件追踪。当前版本会先验证录屏、OCR 和画中画链路是否正常。
+
+## 已生成的安装包
+
+GitHub Release：
+
+https://github.com/luo0331/junqi-assistant-ios/releases/tag/v1.0.0
+
+文件：
+
+`JunqiAssistant-unsigned.ipa`
+
+这是未签名 IPA，需要使用爱思助手重新签名。
+
+## 爱思助手签名步骤
+
+1. 连接 iPhone，打开爱思助手。
+2. 进入“IPA 签名”或“应用签名”。
+3. 导入 `JunqiAssistant-unsigned.ipa`。
+4. 使用你的 Apple ID 签名。
+5. 不要删除或关闭内嵌的 `JunqiBroadcast.appex` 录屏扩展。
+6. 签名完成后安装到手机。
+7. 首次运行如果提示不受信任，在 iPhone 的“设置 > 通用 > VPN与设备管理”中信任开发者证书。
+8. 免费 Apple ID 通常 7 天失效，到期后重新签名安装。
+
+## 真机测试顺序
+
+1. 打开“军棋助手”。
+2. 点击“启动辅助”，确认画中画窗口出现。
+3. 切到微信小游戏。
+4. 从控制中心开启录屏。
+5. 在录屏来源中选择“军棋录屏分析”。
+6. 观察画中画是否显示“等待录屏扩展连接”和 OCR 文字。
+
+如果控制中心看不到“军棋录屏分析”，通常是录屏扩展没有正确签名。
